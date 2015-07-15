@@ -11,6 +11,8 @@ class LoadImageApp:
     xold, yold = None, None
     viewport = (0,0)
     zoomcycle = 0
+    MIN_ZOOM = -10
+    MAX_ZOOM = 10
 
     # A list of saved dots
     dots = []
@@ -20,11 +22,13 @@ class LoadImageApp:
         self.parent = root
         self.frame = Frame(root)
 
-        self.mux = {-9:0.1,-8:0.2,-7:0.3,-6:0.4,-5:0.5,-4:0.6,-3:0.7,-2:0.8,-1:0.9,0:1.0}
+        self.mux = {0 : 1.0}
 
-        for n in range(1,11,1):
-            self.mux[n] = round(self.mux[n-1] + 0.3,2)
+        for n in range(1,self.MAX_ZOOM+1,1):
+            self.mux[n] = round(self.mux[n-1] * 1.1, 5)
 
+        for n in range(-1, self.MIN_ZOOM-1, -1):
+            self.mux[n] = round(self.mux[n+1] * 0.9, 5)
 
         if not image_file:
             self.canvas = Canvas(self.frame, width=800, height=600)
@@ -35,8 +39,7 @@ class LoadImageApp:
 
             # need to save a reference to the PhotoImage object, otherwise, image won't be shown
             self.p_img = ImageTk.PhotoImage(self.raw_image)
-            self.canvas = Canvas(self.frame, width=self.p_img.width(),height=self.p_img.height())
-            #self.canvas.config(background="red")
+            self.canvas = Canvas(self.frame, width=self.p_img.width(),height=self.p_img.height(), bg="white")
 
             self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
             #self.drawGrid()
@@ -88,13 +91,9 @@ class LoadImageApp:
 
     def drawDots(self):
 
-        #print self.dots
         for a,b in self.dots:
-            #(x,y) = self.to_window((a,b))
-            #self.canvas.create_oval(x,y,x+5,y+5,fill="red")
-            x = int(a * self.mux[self.zoomcycle]) - self.viewport[0]
-            y = int(b * self.mux[self.zoomcycle]) - self.viewport[1]
-            self.canvas.create_oval(x,y,x+5,y+5,fill="red")
+            (x,y) = self.to_window((a,b))
+            self.canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
 
 
     def drawGrid(self):
@@ -126,7 +125,6 @@ class LoadImageApp:
         (x,y) = self.viewport
         w,h = self.frame.winfo_width(), self.frame.winfo_height()
 
-        #print "Displaying Region: ", x,y,x+w,y+h
         tmp = self.zoomed_image.crop((x,y,x+w,y+h))
 
         self.p_img = ImageTk.PhotoImage(tmp)
@@ -150,6 +148,13 @@ class LoadImageApp:
 
         fileHandle.close()
 
+        self.button_1 = "up"        # to indicate if button 1 is up or down
+        self.draw = "move"           # value can be "dot","line", or "move"
+        self.xold, self.yold = None, None
+        self.viewport = (0,0)
+        self.zoomcycle = 0
+        self.dots = []
+
         # open the image
         self.raw_image = Image.open(self.imageFile)
         self.zoomed_image = self.raw_image
@@ -157,6 +162,7 @@ class LoadImageApp:
         # need to save a reference to the PhotoImage object, otherwise, image won't be shown
         self.p_img = ImageTk.PhotoImage(self.raw_image)
         self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
+
 
     def save_dots(self):
         print "Save the Dots"
@@ -174,14 +180,20 @@ class LoadImageApp:
         self.draw = "line"
 
     def zoomin(self):
-        print "Zoom In"
-        if self.zoomcycle < 10:
+        if self.zoomcycle < self.MAX_ZOOM:
             self.zoomcycle += 1
             self.scale_image()
             self.display_region()
+        else:
+            print "Max zoom reached!"
 
     def zoomout(self):
-        print "Zoom Out"
+        if self.zoomcycle > self.MIN_ZOOM:
+            self.zoomcycle -= 1
+            self.scale_image()
+            self.display_region()
+        else:
+            print "Min zoom reached!"
 
     #######################################################
     # The following are mouse event handlers
@@ -192,34 +204,19 @@ class LoadImageApp:
         #print "---------------- zoomer --------------------"
 
         # Zoom image and update viewport based on mouse position, if no mouse position, defaults to middle of screen
-        #print "---------------------------"
-        #print "Mouse Position in zoomer: ", event.x, event.y
-        #print "Viewport in zoomer:", self.viewport
-        #print "Old Viewport: ", self.viewport
         (x,y) = self.to_raw((event.x,event.y))
-        #print "Mouse position in raw: ", x,y
 
-        if (event.delta > 0 and self.zoomcycle < 10):
+        if (event.delta > 0 and self.zoomcycle < self.MAX_ZOOM):
             self.zoomcycle += 1
-        elif (event.delta < 0 and self.zoomcycle > -9):
+        elif (event.delta < 0 and self.zoomcycle > self.MIN_ZOOM):
             self.zoomcycle -= 1
         else:
             print "Max/Min zoom reached!"
             return
 
-        #print "Zoomcycle", self.zoomcycle
         self.scale_image()
 
         self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
-        #new_x = int(self.mux[self.zoomcycle]*(self.viewport[0]-event.x)) + event.x
-        #new_y = int(self.mux[self.zoomcycle]*(self.viewport[1]-event.y)) + event.y
-
-        #print "Viewport after zoom:", self.viewport
-        #print "New Calculation: ", new_x, new_y
-
-        # update the viewport as well
-        #self.viewport = (int(event.x * self.mux[self.zoomcycle]) - event.x, int(event.y * self.mux[self.zoomcycle]) - event.y)
-        #print "New Viewport = ", self.viewport
         self.display_region()
 
 
@@ -228,14 +225,10 @@ class LoadImageApp:
             self.button_1 = "down"       # you only want to draw when the button is down
                                             # because "Motion" events happen -all the time-
         elif self.draw is "dot":
-            #print "-------------------"
-            #print "Mouse position in Dots=", event.x, event.y
-            #print "Viewport in dots:", self.viewport
-            event.widget.create_oval(event.x,event.y,event.x+5,event.y+5,fill="blue")
+            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue")
 
             # save the dot in the raw_image aspect ratio
             self.dots.append(self.to_raw((event.x,event.y)))
-            #print "Dots = ", self.dots
 
     def b1up(self,event):
         self.button_1 = "up"
@@ -247,14 +240,11 @@ class LoadImageApp:
             if self.xold is not None and self.yold is not None:
                 if self.draw is "line":
                     # here's where you draw it. smooth. neat.
-                    #print "Draw Line: ", self.xold, self.yold, event.x, event.y
                     event.widget.create_line(self.xold,self.yold,event.x,event.y,smooth=TRUE,fill="blue",width=5)
 
                 elif self.draw is "move":
-                    #print "Panning: old = ", self.xold, self.yold, "new = " , event.x, event.y
                     # update the viewport
                     self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
-                    #print "Viewport = ", self.viewport
                     self.display_region()
 
             self.xold = event.x
