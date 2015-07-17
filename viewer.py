@@ -4,6 +4,14 @@ from PIL import Image, ImageTk
 import sys
 import os
 
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
+import tkMessageBox
+
+
 class LoadImageApp:
 
     button_1 = "up"        # to indicate if button 1 is up or down
@@ -21,6 +29,7 @@ class LoadImageApp:
 
         self.parent = root
         self.frame = Frame(root)
+        self.imageFile = image_file
 
         self.mux = {0 : 1.0}
 
@@ -34,6 +43,15 @@ class LoadImageApp:
             self.canvas = Canvas(self.frame, width=800, height=600)
         else:
 
+            # Check if the dots file exist or not
+            f_name = (image_file.split(".",1))[0] + ".dots"
+
+            if os.path.isfile(f_name):
+                self.dotsFile = f_name
+
+            with open(f_name) as data_file:
+                self.dots = json.load(data_file)
+
             self.raw_image = Image.open(image_file)
             self.zoomed_image = self.raw_image
 
@@ -42,6 +60,10 @@ class LoadImageApp:
             self.canvas = Canvas(self.frame, width=self.p_img.width(),height=self.p_img.height(), bg="white")
 
             self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
+
+            # Draw the dots
+            self.drawDots()
+
             #self.drawGrid()
 
 
@@ -163,9 +185,28 @@ class LoadImageApp:
         self.p_img = ImageTk.PhotoImage(self.raw_image)
         self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
+        # Check if the dots file exist or not
+        f_name = (self.imageFile.split("."))[0] + ".dots"
+
+        if os.path.isfile(f_name):
+            self.dotsFile = f_name
+
+            with open(f_name) as data_file:
+                self.dots = json.load(data_file)
+
+        self.drawDots()
+
 
     def save_dots(self):
-        print "Save the Dots"
+
+        # get the first part of the image file name
+        f_name = (self.imageFile.split(".",1))[0] + ".dots"
+        msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
+        re = tkMessageBox.askokcancel('Save File', msg)
+        if re:
+            f = open(f_name, 'w')
+            json.dump(self.dots, f)
+            f.close()
 
     def exit_app(self):
         sys.exit(0)
