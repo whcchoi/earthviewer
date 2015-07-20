@@ -1,4 +1,8 @@
-from Tkinter import *
+try:
+    from Tkinter import *
+except ImportError:
+    from tkinter import *
+
 import tkFileDialog
 from PIL import Image, ImageTk
 import sys
@@ -28,44 +32,22 @@ class LoadImageApp:
     def __init__(self,root,image_file):
 
         self.parent = root
-        self.frame = Frame(root)
+        self.frame = Frame(root,bg='white')
         self.imageFile = image_file
 
+        # Initialize the scaling/zoom table
         self.mux = {0 : 1.0}
-
         for n in range(1,self.MAX_ZOOM+1,1):
             self.mux[n] = round(self.mux[n-1] * 1.1, 5)
 
         for n in range(-1, self.MIN_ZOOM-1, -1):
             self.mux[n] = round(self.mux[n+1] * 0.9, 5)
 
-        if not image_file:
-            self.canvas = Canvas(self.frame, width=800, height=600)
-        else:
+        self.canvas = Canvas(self.frame,width=800,height=600,bg='white')
 
-            # Check if the dots file exist or not
-            f_name = (image_file.split(".",1))[0] + ".dots"
-
-            if os.path.isfile(f_name):
-                self.dotsFile = f_name
-
-            with open(f_name) as data_file:
-                self.dots = json.load(data_file)
-
-            self.raw_image = Image.open(image_file)
-            self.zoomed_image = self.raw_image
-
-            # need to save a reference to the PhotoImage object, otherwise, image won't be shown
-            self.p_img = ImageTk.PhotoImage(self.raw_image)
-            self.canvas = Canvas(self.frame, width=self.p_img.width(),height=self.p_img.height(), bg="white")
-
-            self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
-
-            # Draw the dots
-            self.drawDots()
-
-            #self.drawGrid()
-
+        # Create a blank canvas or an image canvas if a image file is provided
+        if image_file:
+            self.init_canvas(self.canvas,image_file)
 
         self.frame.pack(fill='both', expand=1)
         self.canvas.pack(fill='both', expand=1)
@@ -100,6 +82,48 @@ class LoadImageApp:
         self.canvas.bind("<ButtonPress-1>", self.b1down)
         self.canvas.bind("<ButtonRelease-1>", self.b1up)
 
+    def init_canvas(self, canvas, image_file):
+
+        # Initialize these variables when a new image is opened
+        self.button_1 = "up"        # to indicate if button 1 is up or down
+        self.draw = "move"           # value can be "dot","line", or "move"
+        self.xold, self.yold = None, None
+        self.viewport = (0,0)
+        self.zoomcycle = 0
+        del self.dots[:]
+
+        self.raw_image = Image.open(image_file)
+        (width, height) = self.raw_image.size
+
+        if width > 1000 or height > 1000:
+            self.raw_image.thumbnail((800,600),Image.ANTIALIAS)
+            (width, height) = self.raw_image.size
+            print "Downsizing image to ", width, "x", height
+
+        self.zoomed_image = self.raw_image
+
+        # need to save a reference to the PhotoImage object, otherwise, image won't be shown
+        self.p_img = ImageTk.PhotoImage(self.raw_image)
+
+        # If image.dots file exist, load the dots
+        f_name = (image_file.split(".",1))[0] + ".dots"
+
+        if os.path.isfile(f_name):
+            self.dotsFile = f_name
+
+            with open(f_name) as data_file:
+                self.dots = json.load(data_file)
+
+        #print "Creating canvas: ", width, height, canvas
+        canvas.config(width=width, height=height)
+        canvas.delete("all")
+        canvas.create_image(0,0,image=self.p_img, anchor="nw")
+
+        #print "Dots=", self.dots
+        # Draw the dots
+        self.drawDots(canvas)
+
+
     def to_raw(self,(x,y)):
 
         # This function will translate the x,y coordinate from window to raw_image coordinate
@@ -111,11 +135,11 @@ class LoadImageApp:
         (vx, vy) = self.viewport
         return (int(x * self.mux[self.zoomcycle]) - vx,int(y * self.mux[self.zoomcycle]) - vy)
 
-    def drawDots(self):
+    def drawDots(self, my_canvas):
 
         for a,b in self.dots:
             (x,y) = self.to_window((a,b))
-            self.canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
+            my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
 
 
     def drawGrid(self):
@@ -141,7 +165,7 @@ class LoadImageApp:
         new_w, new_h = int(raw_x * self.mux[self.zoomcycle]), int(raw_y * self.mux[self.zoomcycle])
         self.zoomed_image = self.raw_image.resize((new_w,new_h), Image.ANTIALIAS)
 
-    def display_region(self):
+    def display_region(self, my_canvas):
 
         # only display the region of the zoomed_image starting at viewport and window size
         (x,y) = self.viewport
@@ -150,10 +174,11 @@ class LoadImageApp:
         tmp = self.zoomed_image.crop((x,y,x+w,y+h))
 
         self.p_img = ImageTk.PhotoImage(tmp)
-        self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
+        my_canvas.config(bg="white")
+        my_canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
         # draw the saved dots
-        self.drawDots()
+        self.drawDots(my_canvas)
         #self.drawGrid()
 
     ########################################################
@@ -170,32 +195,8 @@ class LoadImageApp:
 
         fileHandle.close()
 
-        self.button_1 = "up"        # to indicate if button 1 is up or down
-        self.draw = "move"           # value can be "dot","line", or "move"
-        self.xold, self.yold = None, None
-        self.viewport = (0,0)
-        self.zoomcycle = 0
-        self.dots = []
-
-        # open the image
-        self.raw_image = Image.open(self.imageFile)
-        self.zoomed_image = self.raw_image
-
-        # need to save a reference to the PhotoImage object, otherwise, image won't be shown
-        self.p_img = ImageTk.PhotoImage(self.raw_image)
-        self.canvas.create_image(0,0,image=self.p_img, anchor="nw")
-
-        # Check if the dots file exist or not
-        f_name = (self.imageFile.split("."))[0] + ".dots"
-
-        if os.path.isfile(f_name):
-            self.dotsFile = f_name
-
-            with open(f_name) as data_file:
-                self.dots = json.load(data_file)
-
-        self.drawDots()
-
+        # Initialize the canvas with image file
+        self.init_canvas(self.canvas,self.imageFile)
 
     def save_dots(self):
 
@@ -224,7 +225,7 @@ class LoadImageApp:
         if self.zoomcycle < self.MAX_ZOOM:
             self.zoomcycle += 1
             self.scale_image()
-            self.display_region()
+            self.display_region(self.canvas)
         else:
             print "Max zoom reached!"
 
@@ -232,7 +233,7 @@ class LoadImageApp:
         if self.zoomcycle > self.MIN_ZOOM:
             self.zoomcycle -= 1
             self.scale_image()
-            self.display_region()
+            self.display_region(self.canvas)
         else:
             print "Min zoom reached!"
 
@@ -258,7 +259,7 @@ class LoadImageApp:
         self.scale_image()
 
         self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
-        self.display_region()
+        self.display_region(self.canvas)
 
 
     def b1down(self,event):
@@ -286,7 +287,7 @@ class LoadImageApp:
                 elif self.draw is "move":
                     # update the viewport
                     self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
-                    self.display_region()
+                    self.display_region(self.canvas)
 
             self.xold = event.x
             self.yold = event.y
