@@ -7,6 +7,7 @@ import tkFileDialog
 from PIL import Image, ImageTk
 import sys
 import os
+import math
 
 try:
     import json
@@ -19,12 +20,14 @@ import tkMessageBox
 class LoadImageApp:
 
     button_1 = "up"        # to indicate if button 1 is up or down
-    draw = "move"           # value can be "dot","line", or "move"
+    tool = "move"           # value can be "dot","line", or "move"
     xold, yold = None, None
     viewport = (0,0)
     zoomcycle = 0
     MIN_ZOOM = -10
     MAX_ZOOM = 10
+    raw_image = None
+    zoomed_image = None
 
     # A list of saved dots
     dots = []
@@ -66,9 +69,10 @@ class LoadImageApp:
 
         drawmenu = Menu(menubar,tearoff=0)
         drawmenu.add_command(label="Move", command=self.move)
+        drawmenu.add_command(label="Grid", command=self.grid)
         drawmenu.add_command(label="Dot", command=self.dot)
         drawmenu.add_command(label="Line", command=self.line)
-        menubar.add_cascade(label="Draw", menu=drawmenu)
+        menubar.add_cascade(label="Tool", menu=drawmenu)
 
         zoommenu = Menu(menubar, tearoff=0)
         zoommenu.add_command(label="Zoom In", command=self.zoomin)
@@ -77,16 +81,21 @@ class LoadImageApp:
 
         root.config(menu=menubar)
 
+        self.status = Label(root, text="X,Y", bd=1, relief=SUNKEN, anchor=W)
+        self.status.pack(side=BOTTOM, fill=X)
+
         self.canvas.bind("<MouseWheel>",self.zoomer)
         self.canvas.bind("<Motion>", self.motion)
         self.canvas.bind("<ButtonPress-1>", self.b1down)
         self.canvas.bind("<ButtonRelease-1>", self.b1up)
+        self.canvas.bind("<Configure>", self.resize_window)
+        #self.canvas.tag_bind("dot", "", self.delete_dot)
 
     def init_canvas(self, canvas, image_file):
 
         # Initialize these variables when a new image is opened
         self.button_1 = "up"        # to indicate if button 1 is up or down
-        self.draw = "move"           # value can be "dot","line", or "move"
+        self.tool = "move"           # value can be "dot","line", or "move"
         self.xold, self.yold = None, None
         self.viewport = (0,0)
         self.zoomcycle = 0
@@ -119,9 +128,13 @@ class LoadImageApp:
         canvas.delete("all")
         canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
-        #print "Dots=", self.dots
-        # Draw the dots
+        # Find center of image and radius
+        self.center = (int(width/2), int(height/2))
+        self.radius = int(math.sqrt(self.center[0] * self.center[0] + self.center[1] * self.center[1]))
+
+        # Draw the dots and grids on the canvas as well
         self.drawDots(canvas)
+        #self.drawGrid(canvas)
 
 
     def to_raw(self,(x,y)):
@@ -141,22 +154,22 @@ class LoadImageApp:
             (x,y) = self.to_window((a,b))
             my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
 
+    def drawGrid(self,my_canvas):
 
-    def drawGrid(self):
-        #print "Drawing Grid"
-        centerX, centerY = self.raw_image.size[0]/2, self.raw_image.size[1]/2
-        if self.raw_image.size[0] > self.raw_image.size[1]:
-            d = self.raw_image.size[0]
-        else:
-            d = self.raw_image.size[1]
+        (wX,wY) = self.to_window(self.center)
+        wR = self.radius * self.mux[self.zoomcycle]
 
-        a, b  = centerX - int(d/2), centerY - int(d/2)
+        x = wX - wR
+        y = wY - wR
 
-        x = int(a * self.mux[self.zoomcycle]) - self.viewport[0]
-        y = int(b * self.mux[self.zoomcycle]) - self.viewport[1]
+        my_canvas.create_oval(x,y,x+(2*wR),y+(2*wR))
 
-        self.canvas.create_oval(centerX,centerY,centerX+2,centerY+2)
-        self.canvas.create_oval(x,y,x+d,y+d)
+        # Draw spokes every 10 degrees
+        for n in range(10,370,10):
+            rX = self.center[0] + int(self.radius * math.cos(math.radians(n)))
+            rY = self.center[1] + int(self.radius * math.sin(math.radians(n)))
+            pX,pY = self.to_window((rX,rY))
+            my_canvas.create_line(wX,wY,pX,pY)
 
     def scale_image(self):
 
@@ -179,7 +192,7 @@ class LoadImageApp:
 
         # draw the saved dots
         self.drawDots(my_canvas)
-        #self.drawGrid()
+        #self.drawGrid(my_canvas)
 
     ########################################################
     # The following are menu handlers
@@ -201,7 +214,7 @@ class LoadImageApp:
     def save_dots(self):
 
         # get the first part of the image file name
-        f_name = (self.imageFile.split(".",1))[0] + ".dots"
+        f_name = (self.imageFile.split(".",1))[0] + ".ovl"
         msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
         re = tkMessageBox.askokcancel('Save File', msg)
         if re:
@@ -213,13 +226,16 @@ class LoadImageApp:
         sys.exit(0)
 
     def move(self):
-        self.draw = "move"
+        self.tool = "move"
+
+    def grid(self):
+        self.drawGrid(self.canvas)
 
     def dot(self):
-        self.draw = "dot"
+        self.tool = "dot"
 
     def line(self):
-        self.draw = "line"
+        self.tool = "line"
 
     def zoomin(self):
         if self.zoomcycle < self.MAX_ZOOM:
@@ -261,16 +277,21 @@ class LoadImageApp:
         self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
         self.display_region(self.canvas)
 
+    def delete_dot(self,event):
+        print "Mouse Over Dot", event
 
     def b1down(self,event):
-        if self.draw is "move" or self.draw is "line":
-            self.button_1 = "down"       # you only want to draw when the button is down
-                                            # because "Motion" events happen -all the time-
-        elif self.draw is "dot":
-            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue")
+        if self.tool is "dot":
+            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue",tag="dot")
 
             # save the dot in the raw_image aspect ratio
             self.dots.append(self.to_raw((event.x,event.y)))
+        else:
+            self.button_1 = "down"
+            # Remember the first mouse down coors
+            #self.select_X, self.select_Y = event.x, event.y
+            #self.button_1 = "down"       # you only want to draw when the button is down
+                                            # because "Motion" events happen -all the time-
 
     def b1up(self,event):
         self.button_1 = "up"
@@ -280,17 +301,31 @@ class LoadImageApp:
     def motion(self,event):
         if self.button_1 == "down":
             if self.xold is not None and self.yold is not None:
-                if self.draw is "line":
+                if self.tool is "line":
                     # here's where you draw it. smooth. neat.
                     event.widget.create_line(self.xold,self.yold,event.x,event.y,smooth=TRUE,fill="blue",width=5)
 
-                elif self.draw is "move":
+                elif self.tool is "move":
                     # update the viewport
                     self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
                     self.display_region(self.canvas)
+                #elif self.tool is "select":
+
+                    # Draw a dotted rectangle to show the area selected
+                    #event.widget.create_rectangle(self.select_X,self.select_Y,event.x,event.y,fill="")
 
             self.xold = event.x
             self.yold = event.y
+
+        # update the status bar with x,y values
+        (rX,rY) = self.to_raw((event.x,event.y))
+        str = "(", rX , ",", rY, ")"
+        self.status.config(text=str)
+
+    def resize_window(self, event):
+        #print "Resizing window"
+        if self.zoomed_image:
+            self.display_region(self.canvas)
 
 # Main Program, checks to see if image file is provided in command line, if not, it will be opened via menu File->Open File
 
