@@ -57,7 +57,12 @@ class LoadImageApp:
 
         self.file_opt = options = {}
         options['defaultextension'] = '.gif'
-        options['filetypes'] = [('all files', '.*'), ('ppm files', '.ppm'), ('pgm files', '.pgm'), ('gif files', '.gif')]
+        options['filetypes'] = [('all files', '.*'),
+                                ('ppm files', '.ppm'),
+                                ('pgm files', '.pgm'),
+                                ('gif files', '.gif'),
+                                ('jpg files', '.jpg'),
+                                ('jpeg files', '.jpeg')]
         options['initialdir'] = '.'
 
         menubar = Menu(root)
