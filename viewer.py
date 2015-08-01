@@ -3,7 +3,6 @@ try:
 except ImportError:
     from tkinter import *
 
-import tkFileDialog
 from PIL import Image, ImageTk
 import sys
 import os
@@ -14,6 +13,7 @@ try:
 except ImportError:
     import simplejson as json
 
+import tkFileDialog
 import tkMessageBox
 
 
@@ -74,6 +74,7 @@ class LoadImageApp:
 
         drawmenu = Menu(menubar,tearoff=0)
         drawmenu.add_command(label="Move", command=self.move)
+        drawmenu.add_command(label="Select & Delete", command=self.select)
         drawmenu.add_command(label="Grid", command=self.grid)
         drawmenu.add_command(label="Dot", command=self.dot)
         drawmenu.add_command(label="Line", command=self.line)
@@ -94,7 +95,6 @@ class LoadImageApp:
         self.canvas.bind("<ButtonPress-1>", self.b1down)
         self.canvas.bind("<ButtonRelease-1>", self.b1up)
         self.canvas.bind("<Configure>", self.resize_window)
-        #self.canvas.tag_bind("dot", "", self.delete_dot)
 
     def init_canvas(self, canvas, image_file):
 
@@ -119,8 +119,8 @@ class LoadImageApp:
         # need to save a reference to the PhotoImage object, otherwise, image won't be shown
         self.p_img = ImageTk.PhotoImage(self.raw_image)
 
-        # If image.dots file exist, load the dots
-        f_name = (image_file.split(".",1))[0] + ".dots"
+        # If image.olv file exist, load the dots
+        f_name = (image_file.split(".",1))[0] + ".olv"
 
         if os.path.isfile(f_name):
             self.dotsFile = f_name
@@ -185,6 +185,8 @@ class LoadImageApp:
 
     def display_region(self, my_canvas):
 
+        my_canvas.delete("all")
+
         # only display the region of the zoomed_image starting at viewport and window size
         (x,y) = self.viewport
         w,h = self.frame.winfo_width(), self.frame.winfo_height()
@@ -197,6 +199,7 @@ class LoadImageApp:
 
         # draw the saved dots
         self.drawDots(my_canvas)
+        print my_canvas.find_withtag("all")
         #self.drawGrid(my_canvas)
 
     ########################################################
@@ -219,7 +222,7 @@ class LoadImageApp:
     def save_dots(self):
 
         # get the first part of the image file name
-        f_name = (self.imageFile.split(".",1))[0] + ".ovl"
+        f_name = (self.imageFile.split(".",1))[0] + ".olv"
         msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
         re = tkMessageBox.askokcancel('Save File', msg)
         if re:
@@ -232,6 +235,9 @@ class LoadImageApp:
 
     def move(self):
         self.tool = "move"
+
+    def select(self):
+        self.tool = "select"
 
     def grid(self):
         self.drawGrid(self.canvas)
@@ -282,20 +288,17 @@ class LoadImageApp:
         self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
         self.display_region(self.canvas)
 
-    def delete_dot(self,event):
-        print "Mouse Over Dot", event
-
     def b1down(self,event):
         if self.tool is "dot":
-            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue",tag="dot")
+
+            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue")
 
             # save the dot in the raw_image aspect ratio
             self.dots.append(self.to_raw((event.x,event.y)))
         else:
-            self.button_1 = "down"
-            # Remember the first mouse down coors
-            #self.select_X, self.select_Y = event.x, event.y
-            #self.button_1 = "down"       # you only want to draw when the button is down
+            # Remember the first mouse down coors (for "select" function)
+            self.select_X, self.select_Y = event.x, event.y
+            self.button_1 = "down"       # you only want to draw when the button is down
                                             # because "Motion" events happen -all the time-
 
     def b1up(self,event):
@@ -303,7 +306,35 @@ class LoadImageApp:
         self.xold = None           # reset the line when you let go of the button
         self.yold = None
 
+        if self.tool is "select":
+            items = event.widget.find_enclosed(self.select_X, self.select_Y, event.x, event.y)
+
+            # delete the rectangle since we already found all items enclosed in it
+            rect = event.widget.find_withtag("selection_rectangle")
+            if rect:
+                event.widget.delete(rect)
+
+            # Change the color of the selected dots to "red"
+            for i in items:
+                event.widget.itemconfig(i,fill="red")
+
+            if items:
+                result = tkMessageBox.askokcancel("Confirm deletion?","Press OK to delete selected dot(s)!")
+
+                if result:
+                    # Delete the selected dots on the canvas, and remove it from "dots" dictionary
+                    for i in items:
+                        xy = event.widget.coords(i)
+                        print xy
+                        x = (xy[0]+xy[2])/2
+                        y = (xy[1]+xy[3])/2
+                        raw_xy = self.to_raw((x,y))
+                        if self.dots.index(raw_xy):
+                            self.dots.remove(raw_xy)
+                        event.widget.delete(i)
+
     def motion(self,event):
+
         if self.button_1 == "down":
             if self.xold is not None and self.yold is not None:
                 if self.tool is "line":
@@ -314,10 +345,13 @@ class LoadImageApp:
                     # update the viewport
                     self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
                     self.display_region(self.canvas)
-                #elif self.tool is "select":
 
+                elif self.tool is "select":
                     # Draw a dotted rectangle to show the area selected
-                    #event.widget.create_rectangle(self.select_X,self.select_Y,event.x,event.y,fill="")
+                    rect = event.widget.find_withtag("selection_rectangle")
+                    if rect:
+                        event.widget.delete(rect)
+                    event.widget.create_rectangle(self.select_X,self.select_Y,event.x,event.y,fill="",dash=(5,2),tag="selection_rectangle")
 
             self.xold = event.x
             self.yold = event.y
@@ -328,7 +362,6 @@ class LoadImageApp:
         self.status.config(text=str)
 
     def resize_window(self, event):
-        #print "Resizing window"
         if self.zoomed_image:
             self.display_region(self.canvas)
 
