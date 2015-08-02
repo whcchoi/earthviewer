@@ -141,6 +141,12 @@ class LoadImageApp:
         self.drawDots(canvas)
         #self.drawGrid(canvas)
 
+    # To check if a dot coords is in the list, the coords could be off by 1 due to rounding from to_raw()
+    def dot_in_list(self,(x,y)):
+
+        for a,b in self.dots:
+            if math.fabs(x-a) < 1 and math.fabs(y-b) < 1:
+                return (a,b)
 
     def to_raw(self,(x,y)):
 
@@ -328,9 +334,13 @@ class LoadImageApp:
                         print xy
                         x = (xy[0]+xy[2])/2
                         y = (xy[1]+xy[3])/2
+                        print "X and Y = ", x, y
                         raw_xy = self.to_raw((x,y))
-                        if self.dots.index(raw_xy):
-                            self.dots.remove(raw_xy)
+                        print "Raw X, Y = ", raw_xy
+                        print "DOTS = ", self.dots
+                        real_dot = self.dot_in_list(raw_xy)
+                        if real_dot:
+                            self.dots.remove(real_dot)
                         event.widget.delete(i)
 
     def motion(self,event):
