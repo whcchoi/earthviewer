@@ -7,31 +7,36 @@ from PIL import Image, ImageTk
 import sys
 import os
 import math
-
-try:
-    import json
-except ImportError:
-    import simplejson as json
-
+import pickle
 import tkFileDialog
 import tkMessageBox
 
 
+####################################################################
+# Class: LoadImageApp
+# Main App, created in Main()
+####################################################################
 class LoadImageApp:
 
     button_1 = "up"        # to indicate if button 1 is up or down
-    tool = "move"           # value can be "dot","line", or "move"
+    tool = "move"          # value can be "move", "dot", "line", "select", or "grid"
     xold, yold = None, None
-    viewport = (0,0)
-    zoomcycle = 0
+    viewport = (0,0)       # Use for zoom and pan, this is adjusted whenever image is zoom/pan
+    zoomcycle = 0          # from -10 to 10, 0 is no zoom
     MIN_ZOOM = -10
     MAX_ZOOM = 10
-    raw_image = None
-    zoomed_image = None
+    raw_image = None       # a reference to the raw image (of class Image)
+    zoomed_image = None    # reference to the zoomed image (of class Image)
 
-    # A list of saved dots
+    # A list of saved dots (in tuples)
     dots = []
 
+    ####################################################################
+    # Function: __init__
+    # Args:  root           parent
+    #        image_file     name of image file
+    # Returns:  None
+    ####################################################################
     def __init__(self,root,image_file):
 
         self.parent = root
@@ -46,15 +51,17 @@ class LoadImageApp:
         for n in range(-1, self.MIN_ZOOM-1, -1):
             self.mux[n] = round(self.mux[n+1] * 0.9, 5)
 
+        # Create a blank canvas of size 800*600
         self.canvas = Canvas(self.frame,width=800,height=600,bg='white')
 
-        # Create a blank canvas or an image canvas if a image file is provided
+        # If image file is provided, this will create the image in the canvas
         if image_file:
             self.init_canvas(self.canvas,image_file)
 
         self.frame.pack(fill='both', expand=1)
         self.canvas.pack(fill='both', expand=1)
 
+        # The following are for file open dialogs window settings
         self.file_opt = options = {}
         options['defaultextension'] = '.gif'
         options['filetypes'] = [('all files', '.*'),
@@ -65,6 +72,7 @@ class LoadImageApp:
                                 ('jpeg files', '.jpeg')]
         options['initialdir'] = '.'
 
+        # Menu items
         menubar = Menu(root)
         filemenu = Menu(menubar,tearoff=0)
         filemenu.add_command(label="Open", command=self.open_file)
@@ -75,9 +83,9 @@ class LoadImageApp:
         drawmenu = Menu(menubar,tearoff=0)
         drawmenu.add_command(label="Move", command=self.move)
         drawmenu.add_command(label="Select & Delete", command=self.select)
-        drawmenu.add_command(label="Grid", command=self.grid)
-        drawmenu.add_command(label="Dot", command=self.dot)
-        drawmenu.add_command(label="Line", command=self.line)
+        drawmenu.add_command(label="Draw Circle Grid", command=self.grid)
+        drawmenu.add_command(label="Draw Dot", command=self.dot)
+        drawmenu.add_command(label="Draw Line", command=self.line)
         menubar.add_cascade(label="Tool", menu=drawmenu)
 
         zoommenu = Menu(menubar, tearoff=0)
@@ -85,22 +93,31 @@ class LoadImageApp:
         zoommenu.add_command(label="Zoom Out", command=self.zoomout)
         menubar.add_cascade(label="Zoom",menu=zoommenu)
 
+        # Attach created menu to root window
         root.config(menu=menubar)
 
+        # Create the status bar on the bottom to show the X,Y coords (in respect to RAW image coords)
         self.status = Label(root, text="X,Y", bd=1, relief=SUNKEN, anchor=W)
         self.status.pack(side=BOTTOM, fill=X)
 
+        # Event binding
         self.canvas.bind("<MouseWheel>",self.zoomer)
         self.canvas.bind("<Motion>", self.motion)
         self.canvas.bind("<ButtonPress-1>", self.b1down)
         self.canvas.bind("<ButtonRelease-1>", self.b1up)
         self.canvas.bind("<Configure>", self.resize_window)
 
+    ####################################################################
+    # Function: init_canvas(), initialize the canvas with the image provided
+    # Args:  canvas
+    #        image_file     name of image file
+    # Returns:  None
+    ####################################################################
     def init_canvas(self, canvas, image_file):
 
-        # Initialize these variables when a new image is opened
-        self.button_1 = "up"        # to indicate if button 1 is up or down
-        self.tool = "move"           # value can be "dot","line", or "move"
+        # Reset these variables when a new image is opened
+        self.button_1 = "up"
+        self.tool = "move"
         self.xold, self.yold = None, None
         self.viewport = (0,0)
         self.zoomcycle = 0
@@ -109,6 +126,7 @@ class LoadImageApp:
         self.raw_image = Image.open(image_file)
         (width, height) = self.raw_image.size
 
+        # If image is larger than 1000 pixels, resize it to less than 800 x 600
         if width > 1000 or height > 1000:
             self.raw_image.thumbnail((800,600),Image.ANTIALIAS)
             (width, height) = self.raw_image.size
@@ -126,10 +144,13 @@ class LoadImageApp:
             self.dotsFile = f_name
 
             with open(f_name) as data_file:
-                self.dots = json.load(data_file)
+                self.dots = pickle.load(data_file)
+                #print "DOTS (init) = ", self.dots
 
-        #print "Creating canvas: ", width, height, canvas
+        # Change the size of the canvas to new width and height based on image size
         canvas.config(width=width, height=height)
+
+        # Remove all the previous canvas items
         canvas.delete("all")
         canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
@@ -145,8 +166,10 @@ class LoadImageApp:
     def dot_in_list(self,(x,y)):
 
         for a,b in self.dots:
-            if math.fabs(x-a) < 1 and math.fabs(y-b) < 1:
+            if math.fabs(x-a) <= 2 and math.fabs(y-b) <= 2:
+                #print "Dots FOund in list: ", (a,b)
                 return (a,b)
+
 
     def to_raw(self,(x,y)):
 
@@ -160,8 +183,9 @@ class LoadImageApp:
         return (int(x * self.mux[self.zoomcycle]) - vx,int(y * self.mux[self.zoomcycle]) - vy)
 
     def drawDots(self, my_canvas):
+        #print "DOTS (drawDots) = ", self.dots
 
-        for a,b in self.dots:
+        for (a,b) in self.dots:
             (x,y) = self.to_window((a,b))
             my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
 
@@ -205,7 +229,7 @@ class LoadImageApp:
 
         # draw the saved dots
         self.drawDots(my_canvas)
-        print my_canvas.find_withtag("all")
+        #print my_canvas.find_withtag("all")
         #self.drawGrid(my_canvas)
 
     ########################################################
@@ -227,13 +251,14 @@ class LoadImageApp:
 
     def save_dots(self):
 
+        #print "DOTS(save_dots) = ", self.dots
         # get the first part of the image file name
         f_name = (self.imageFile.split(".",1))[0] + ".olv"
         msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
         re = tkMessageBox.askokcancel('Save File', msg)
         if re:
-            f = open(f_name, 'w')
-            json.dump(self.dots, f)
+            f = open(f_name, 'wb')
+            pickle.dump(self.dots, f)
             f.close()
 
     def exit_app(self):
@@ -309,9 +334,10 @@ class LoadImageApp:
 
     def b1up(self,event):
         self.button_1 = "up"
-        self.xold = None           # reset the line when you let go of the button
+        self.xold = None           # reset xold and yold when you let go of the button
         self.yold = None
 
+        # Handles dot deletion here, use canvas.find_enclosed to find items contained within the selection rectangles
         if self.tool is "select":
             items = event.widget.find_enclosed(self.select_X, self.select_Y, event.x, event.y)
 
@@ -324,35 +350,47 @@ class LoadImageApp:
             for i in items:
                 event.widget.itemconfig(i,fill="red")
 
+            # If there's canvas items found, (Only works on dots), pop up an dialog to confirm the deletion
             if items:
                 result = tkMessageBox.askokcancel("Confirm deletion?","Press OK to delete selected dot(s)!")
 
+                # If user confirms deletion
                 if result:
-                    # Delete the selected dots on the canvas, and remove it from "dots" dictionary
+                    # Delete the selected dots on the canvas, and remove it from "dots" list
                     for i in items:
                         xy = event.widget.coords(i)
-                        print xy
+                        #print xy
                         x = (xy[0]+xy[2])/2
                         y = (xy[1]+xy[3])/2
-                        print "X and Y = ", x, y
+                        #print "X and Y = ", x, y
                         raw_xy = self.to_raw((x,y))
-                        print "Raw X, Y = ", raw_xy
-                        print "DOTS = ", self.dots
+                        #print "Raw X, Y = ", raw_xy
+                        #print "DOTS = ", self.dots
+
+                        # Since the "to_raw" may make dots value a bit off, therefore, the dot_in_list function will
+                        # accommodate the coords by +1 to -1 pixel value
                         real_dot = self.dot_in_list(raw_xy)
+
+                        # remove the dots from the list
                         if real_dot:
                             self.dots.remove(real_dot)
-                        event.widget.delete(i)
+                            event.widget.delete(i)
 
+    # Handles mouse movement, depends on what's the current mouse function
     def motion(self,event):
 
+        # Only do anything if mouse button (left button) is clicked first.
         if self.button_1 == "down":
             if self.xold is not None and self.yold is not None:
+
+                # Handles different functions differently
                 if self.tool is "line":
-                    # here's where you draw it. smooth. neat.
+                    # here's where you draw line. smooth. neat.
                     event.widget.create_line(self.xold,self.yold,event.x,event.y,smooth=TRUE,fill="blue",width=5)
 
                 elif self.tool is "move":
-                    # update the viewport
+                    # Panning
+                    # update the viewport and redraw the canvas
                     self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
                     self.display_region(self.canvas)
 
@@ -361,12 +399,12 @@ class LoadImageApp:
                     rect = event.widget.find_withtag("selection_rectangle")
                     if rect:
                         event.widget.delete(rect)
-                    event.widget.create_rectangle(self.select_X,self.select_Y,event.x,event.y,fill="",dash=(5,2),tag="selection_rectangle")
+                    event.widget.create_rectangle(self.select_X,self.select_Y,event.x,event.y,fill="",dash=(4,2),tag="selection_rectangle")
 
             self.xold = event.x
             self.yold = event.y
 
-        # update the status bar with x,y values
+        # update the status bar with x,y values, status bar always shows "RAW" coordinates
         (rX,rY) = self.to_raw((event.x,event.y))
         str = "(", rX , ",", rY, ")"
         self.status.config(text=str)
