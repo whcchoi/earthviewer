@@ -11,6 +11,78 @@ import pickle
 import tkFileDialog
 import tkMessageBox
 
+import tkSimpleDialog
+
+
+class GridDialog(tkSimpleDialog.Dialog):
+
+    def __init__(self,parent,title=None,center=(0,0),radius=0):
+
+        Toplevel.__init__(self, parent)
+        self.transient(parent)
+
+        if title:
+            self.title(title)
+
+        self.parent = parent
+        self.center = center
+        self.radius = radius
+
+        self.result = None
+
+        body = Frame(self)
+        self.initial_focus = self.body(body)
+        body.pack(padx=5, pady=5)
+
+        self.buttonbox()
+
+        self.grab_set()
+
+        if not self.initial_focus:
+            self.initial_focus = self
+
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+        self.geometry("+%d+%d" % (parent.winfo_rootx()+50,
+                                  parent.winfo_rooty()+50))
+
+        self.initial_focus.focus_set()
+        self.wait_window(self)
+
+    def body(self, master):
+
+        Label(master, text="X:").grid(row=0)
+        Label(master, text="Y:").grid(row=1)
+        Label(master, text="Radius:").grid(row=2)
+
+        c1 = StringVar()
+        self.e1 = Entry(master, textvariable=c1)
+        c1.set(str(self.center[0]))
+
+        c2 = StringVar()
+        self.e2 = Entry(master, textvariable=c2)
+        c2.set(str(self.center[1]))
+
+        r = StringVar()
+        self.e3 = Entry(master, textvariable=r)
+        r.set(str(self.radius))
+
+        self.e1.grid(row=0, column=1)
+        self.e2.grid(row=1, column=1)
+        self.e3.grid(row=2, column=1)
+
+        return self.e1    # initial focus
+
+    def apply(self):
+
+        X = self.e1.get()
+        Y = self.e2.get()
+        R = self.e3.get()
+
+        self.center = (int(X), int(Y))
+        self.radius = int(R)
+        self.result = True
+
 
 ####################################################################
 # Class: LoadImageApp
@@ -27,6 +99,7 @@ class LoadImageApp:
     MAX_ZOOM = 10
     raw_image = None       # a reference to the raw image (of class Image)
     zoomed_image = None    # reference to the zoomed image (of class Image)
+    showGrid = False
 
     # A list of saved dots (in tuples)
     dots = []
@@ -83,10 +156,14 @@ class LoadImageApp:
         drawmenu = Menu(menubar,tearoff=0)
         drawmenu.add_command(label="Move", command=self.move)
         drawmenu.add_command(label="Select & Delete", command=self.select)
-        drawmenu.add_command(label="Draw Circle Grid", command=self.grid)
         drawmenu.add_command(label="Draw Dot", command=self.dot)
         drawmenu.add_command(label="Draw Line", command=self.line)
         menubar.add_cascade(label="Tool", menu=drawmenu)
+
+        gridmenu = Menu(menubar, tearoff=0)
+        gridmenu.add_command(label="Show Grid", command=self.show_grid)
+        gridmenu.add_command(label="Hide Grid", command=self.hide_grid)
+        menubar.add_cascade(label="Grid",menu=gridmenu)
 
         zoommenu = Menu(menubar, tearoff=0)
         zoommenu.add_command(label="Zoom In", command=self.zoomin)
@@ -121,46 +198,49 @@ class LoadImageApp:
         self.xold, self.yold = None, None
         self.viewport = (0,0)
         self.zoomcycle = 0
+        self.showGrid = False
         del self.dots[:]
 
-        self.raw_image = Image.open(image_file)
-        (width, height) = self.raw_image.size
+        if image_file:
 
-        # If image is larger than 1000 pixels, resize it to less than 800 x 600
-        if width > 1000 or height > 1000:
-            self.raw_image.thumbnail((800,600),Image.ANTIALIAS)
+            self.imageFile = image_file
+            self.raw_image = Image.open(image_file)
             (width, height) = self.raw_image.size
-            print "Downsizing image to ", width, "x", height
 
-        self.zoomed_image = self.raw_image
+            # If image is larger than 1000 pixels, resize it to less than 800 x 600
+            if width > 1000 or height > 1000:
+                self.raw_image.thumbnail((800,600),Image.ANTIALIAS)
+                (width, height) = self.raw_image.size
+                print "Downsizing image to ", width, "x", height
 
-        # need to save a reference to the PhotoImage object, otherwise, image won't be shown
-        self.p_img = ImageTk.PhotoImage(self.raw_image)
+            self.zoomed_image = self.raw_image
 
-        # If image.olv file exist, load the dots
-        f_name = (image_file.split(".",1))[0] + ".olv"
+            # need to save a reference to the PhotoImage object, otherwise, image won't be shown
+            self.p_img = ImageTk.PhotoImage(self.raw_image)
 
-        if os.path.isfile(f_name):
-            self.dotsFile = f_name
+            # If image.olv file exist, load the dots
+            f_name = (image_file.split(".",1))[0] + ".olv"
 
-            with open(f_name) as data_file:
-                self.dots = pickle.load(data_file)
-                #print "DOTS (init) = ", self.dots
+            if os.path.isfile(f_name):
+                self.dotsFile = f_name
 
-        # Change the size of the canvas to new width and height based on image size
-        canvas.config(width=width, height=height)
+                with open(f_name) as data_file:
+                    self.dots = pickle.load(data_file)
+                    #print "DOTS (init) = ", self.dots
 
-        # Remove all the previous canvas items
-        canvas.delete("all")
-        canvas.create_image(0,0,image=self.p_img, anchor="nw")
+            # Change the size of the canvas to new width and height based on image size
+            canvas.config(width=width, height=height)
 
-        # Find center of image and radius
-        self.center = (int(width/2), int(height/2))
-        self.radius = int(math.sqrt(self.center[0] * self.center[0] + self.center[1] * self.center[1]))
+            # Remove all the previous canvas items
+            canvas.delete("all")
+            canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
-        # Draw the dots and grids on the canvas as well
-        self.drawDots(canvas)
-        #self.drawGrid(canvas)
+            # Find the default center of image and radius
+            self.center = (int(width/2), int(height/2))
+            self.radius = int(math.sqrt(self.center[0] * self.center[0] + self.center[1] * self.center[1]))
+
+            # Draw the dots and grids on the canvas as well
+            self.drawDots(canvas)
 
     # To check if a dot coords is in the list, the coords could be off by 1 due to rounding from to_raw()
     def dot_in_list(self,(x,y)):
@@ -189,22 +269,25 @@ class LoadImageApp:
             (x,y) = self.to_window((a,b))
             my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
 
-    def drawGrid(self,my_canvas):
+    def drawGrid(self,my_canvas, center, radius):
 
-        (wX,wY) = self.to_window(self.center)
-        wR = self.radius * self.mux[self.zoomcycle]
+        # remove old grid before drawing new ones
+        my_canvas.delete("grid")
+
+        (wX,wY) = self.to_window(center)
+        wR = radius * self.mux[self.zoomcycle]
 
         x = wX - wR
         y = wY - wR
 
-        my_canvas.create_oval(x,y,x+(2*wR),y+(2*wR))
+        my_canvas.create_oval(x,y,x+(2*wR),y+(2*wR),tag="grid")
 
         # Draw spokes every 10 degrees
         for n in range(10,370,10):
-            rX = self.center[0] + int(self.radius * math.cos(math.radians(n)))
-            rY = self.center[1] + int(self.radius * math.sin(math.radians(n)))
+            rX = center[0] + int(radius * math.cos(math.radians(n)))
+            rY = center[1] + int(radius * math.sin(math.radians(n)))
             pX,pY = self.to_window((rX,rY))
-            my_canvas.create_line(wX,wY,pX,pY)
+            my_canvas.create_line(wX,wY,pX,pY,tag="grid")
 
     def scale_image(self):
 
@@ -229,25 +312,23 @@ class LoadImageApp:
 
         # draw the saved dots
         self.drawDots(my_canvas)
-        #print my_canvas.find_withtag("all")
-        #self.drawGrid(my_canvas)
+
+        if self.showGrid:
+            self.drawGrid(my_canvas, self.center, self.radius)
 
     ########################################################
     # The following are menu handlers
     ########################################################
 
     def open_file(self):
-        fileHandle = tkFileDialog.askopenfile(mode='r', **self.file_opt)
+        file = tkFileDialog.askopenfilename(**self.file_opt)
 
-        if fileHandle:
-            self.imageFile = fileHandle.name
+        if file:
+            # Initialize the canvas with image file
+            self.init_canvas(self.canvas,file)
         else:
-            print "Error opening file selected!"
+            print "No file selected"
 
-        fileHandle.close()
-
-        # Initialize the canvas with image file
-        self.init_canvas(self.canvas,self.imageFile)
 
     def save_dots(self):
 
@@ -270,8 +351,23 @@ class LoadImageApp:
     def select(self):
         self.tool = "select"
 
-    def grid(self):
-        self.drawGrid(self.canvas)
+    def show_grid(self):
+
+        # Get the user x,y coords and radius for the grid
+        if self.raw_image:
+
+            d = GridDialog(self.parent, title="Grid Preferences", center=self.center, radius =self.radius)
+            if d:
+                self.center = d.center
+                self.radius = d.radius
+                self.showGrid = d.result
+
+                if self.showGrid:
+                    self.drawGrid(self.canvas, d.center, d.radius)
+
+    def hide_grid(self):
+        self.showGrid = False
+        self.canvas.delete("grid")
 
     def dot(self):
         self.tool = "dot"
