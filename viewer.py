@@ -13,7 +13,10 @@ import tkMessageBox
 
 import tkSimpleDialog
 
-
+####################################################################
+# Class: GridDialog
+# Creates the dialog that configs the center and radius of grid drawing
+####################################################################
 class GridDialog(tkSimpleDialog.Dialog):
 
     def __init__(self,parent,title=None,center=(0,0),radius=0):
@@ -267,7 +270,7 @@ class LoadImageApp:
 
         for (a,b) in self.dots:
             (x,y) = self.to_window((a,b))
-            my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
+            my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue", tag="dot")
 
     def drawGrid(self,my_canvas, center, radius):
 
@@ -332,15 +335,14 @@ class LoadImageApp:
 
     def save_dots(self):
 
-        #print "DOTS(save_dots) = ", self.dots
-        # get the first part of the image file name
-        f_name = (self.imageFile.split(".",1))[0] + ".olv"
-        msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
-        re = tkMessageBox.askokcancel('Save File', msg)
-        if re:
-            f = open(f_name, 'wb')
-            pickle.dump(self.dots, f)
-            f.close()
+        if self.dots:
+            f_name = (self.imageFile.split(".",1))[0] + ".olv"
+            msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
+            re = tkMessageBox.askokcancel('Save File', msg)
+            if re:
+                f = open(f_name, 'wb')
+                pickle.dump(self.dots, f)
+                f.close()
 
     def exit_app(self):
         sys.exit(0)
@@ -349,7 +351,7 @@ class LoadImageApp:
         self.tool = "move"
 
     def select(self):
-        self.tool = "select"
+            self.tool = "select"
 
     def show_grid(self):
 
@@ -366,30 +368,35 @@ class LoadImageApp:
                     self.drawGrid(self.canvas, d.center, d.radius)
 
     def hide_grid(self):
-        self.showGrid = False
-        self.canvas.delete("grid")
+        if self.raw_image:
+            self.showGrid = False
+            self.canvas.delete("grid")
 
     def dot(self):
-        self.tool = "dot"
+        if self.raw_image:
+            self.tool = "dot"
 
     def line(self):
-        self.tool = "line"
+        if self.raw_image:
+            self.tool = "line"
 
     def zoomin(self):
-        if self.zoomcycle < self.MAX_ZOOM:
-            self.zoomcycle += 1
-            self.scale_image()
-            self.display_region(self.canvas)
-        else:
-            print "Max zoom reached!"
+        if self.raw_image:
+            if self.zoomcycle < self.MAX_ZOOM:
+                self.zoomcycle += 1
+                self.scale_image()
+                self.display_region(self.canvas)
+            else:
+                print "Max zoom reached!"
 
     def zoomout(self):
-        if self.zoomcycle > self.MIN_ZOOM:
-            self.zoomcycle -= 1
-            self.scale_image()
-            self.display_region(self.canvas)
-        else:
-            print "Min zoom reached!"
+        if self.raw_image:
+            if self.zoomcycle > self.MIN_ZOOM:
+                self.zoomcycle -= 1
+                self.scale_image()
+                self.display_region(self.canvas)
+            else:
+                print "Min zoom reached!"
 
     #######################################################
     # The following are mouse event handlers
@@ -399,36 +406,43 @@ class LoadImageApp:
 
         #print "---------------- zoomer --------------------"
 
-        # Zoom image and update viewport based on mouse position, if no mouse position, defaults to middle of screen
-        (x,y) = self.to_raw((event.x,event.y))
+        # Zoom image and update viewport based on mouse position
+        if self.raw_image:
+            (x,y) = self.to_raw((event.x,event.y))
 
-        if (event.delta > 0 and self.zoomcycle < self.MAX_ZOOM):
-            self.zoomcycle += 1
-        elif (event.delta < 0 and self.zoomcycle > self.MIN_ZOOM):
-            self.zoomcycle -= 1
-        else:
-            print "Max/Min zoom reached!"
-            return
+            if (event.delta > 0 and self.zoomcycle < self.MAX_ZOOM):
+                self.zoomcycle += 1
+            elif (event.delta < 0 and self.zoomcycle > self.MIN_ZOOM):
+                self.zoomcycle -= 1
+            else:
+                print "Max/Min zoom reached!"
+                return
 
-        self.scale_image()
+            self.scale_image()
 
-        self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
-        self.display_region(self.canvas)
+            self.viewport = (int(x * self.mux[self.zoomcycle]) - x, int(y * self.mux[self.zoomcycle]) - y)
+            self.display_region(self.canvas)
 
     def b1down(self,event):
-        if self.tool is "dot":
 
-            event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue")
+        if self.raw_image:
+            if self.tool is "dot":
 
-            # save the dot in the raw_image aspect ratio
-            self.dots.append(self.to_raw((event.x,event.y)))
-        else:
-            # Remember the first mouse down coors (for "select" function)
-            self.select_X, self.select_Y = event.x, event.y
-            self.button_1 = "down"       # you only want to draw when the button is down
-                                            # because "Motion" events happen -all the time-
+                event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue", tag="dot")
+
+                # save the dot in the raw_image aspect ratio
+                self.dots.append(self.to_raw((event.x,event.y)))
+            else:
+                # Remember the first mouse down coors (for "select" function)
+                self.select_X, self.select_Y = event.x, event.y
+                self.button_1 = "down"       # you only want to draw when the button is down
+                                             # because "Motion" events happen -all the time-
 
     def b1up(self,event):
+
+        if not self.raw_image:
+            return
+
         self.button_1 = "up"
         self.xold = None           # reset xold and yold when you let go of the button
         self.yold = None
@@ -442,18 +456,22 @@ class LoadImageApp:
             if rect:
                 event.widget.delete(rect)
 
+            found_dots = []
             # Change the color of the selected dots to "red"
             for i in items:
-                event.widget.itemconfig(i,fill="red")
+                if "dot" in event.widget.gettags(i):
+                    event.widget.itemconfig(i,fill="red")
+                    found_dots.append(i)
 
-            # If there's canvas items found, (Only works on dots), pop up an dialog to confirm the deletion
-            if items:
+
+            # If there's dots found, pop up an dialog to confirm the deletion
+            if found_dots:
                 result = tkMessageBox.askokcancel("Confirm deletion?","Press OK to delete selected dot(s)!")
 
                 # If user confirms deletion
                 if result:
                     # Delete the selected dots on the canvas, and remove it from "dots" list
-                    for i in items:
+                    for i in found_dots:
                         xy = event.widget.coords(i)
                         #print xy
                         x = (xy[0]+xy[2])/2
@@ -476,7 +494,7 @@ class LoadImageApp:
     def motion(self,event):
 
         # Only do anything if mouse button (left button) is clicked first.
-        if self.button_1 == "down":
+        if self.raw_image and self.button_1 == "down":
             if self.xold is not None and self.yold is not None:
 
                 # Handles different functions differently
@@ -484,11 +502,10 @@ class LoadImageApp:
                     # here's where you draw line. smooth. neat.
                     event.widget.create_line(self.xold,self.yold,event.x,event.y,smooth=TRUE,fill="blue",width=5)
 
-                elif self.tool is "move":
-                    # Panning
+                elif self.tool is "move":     # Panning
                     # update the viewport and redraw the canvas
-                    self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
-                    self.display_region(self.canvas)
+                        self.viewport = (self.viewport[0] - (event.x - self.xold), self.viewport[1] - (event.y - self.yold))
+                        self.display_region(self.canvas)
 
                 elif self.tool is "select":
                     # Draw a dotted rectangle to show the area selected
