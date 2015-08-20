@@ -159,6 +159,7 @@ class LoadImageApp:
         drawmenu = Menu(menubar,tearoff=0)
         drawmenu.add_command(label="Move", command=self.move)
         drawmenu.add_command(label="Select & Delete", command=self.select)
+        drawmenu.add_command(label="Show Dots Info", command=self.show_dots)
         drawmenu.add_command(label="Draw Dot", command=self.dot)
         drawmenu.add_command(label="Draw Line", command=self.line)
         menubar.add_cascade(label="Tool", menu=drawmenu)
@@ -351,7 +352,16 @@ class LoadImageApp:
         self.tool = "move"
 
     def select(self):
-            self.tool = "select"
+        self.tool = "select"
+
+    def show_dots(self):
+
+        #str = 'X, Y', self.dots
+        text = "X , Y = "
+        for i in self.dots:
+            text = text + "(" + str(i[0]) + " , " + str(i[1]) + "), "
+
+        tkMessageBox.showinfo("Dots Information", text)
 
     def show_grid(self):
 
