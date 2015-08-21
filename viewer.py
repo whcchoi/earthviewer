@@ -100,7 +100,7 @@ class LoadImageApp:
     viewport = (0,0)       # Use for zoom and pan, this is adjusted whenever image is zoom/pan
     zoomcycle = 0          # from -10 to 10, 0 is no zoom
     MIN_ZOOM = -10
-    MAX_ZOOM = 10
+    MAX_ZOOM = 15
     raw_image = None       # a reference to the raw image (of class Image)
     zoomed_image = None    # reference to the zoomed image (of class Image)
     showGrid = False
@@ -289,7 +289,7 @@ class LoadImageApp:
         my_canvas.create_oval(x,y,x+(2*wR),y+(2*wR),tag="grid")
 
         # Draw spokes every 10 degrees
-        for n in range(10,370,10):
+        for n in range(5,365,5):
             rX = center[0] + int(radius * math.cos(math.radians(n)))
             rY = center[1] + int(radius * math.sin(math.radians(n)))
             pX,pY = self.to_window((rX,rY))
