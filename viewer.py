@@ -8,6 +8,7 @@ import sys
 import os
 import math
 import pickle
+import csv
 import tkFileDialog
 import tkMessageBox
 
@@ -153,6 +154,7 @@ class LoadImageApp:
         filemenu = Menu(menubar,tearoff=0)
         filemenu.add_command(label="Open", command=self.open_file)
         filemenu.add_command(label="Save", command=self.save_dots)
+        filemenu.add_command(label="Export to CSV", command=self.save_csv)
         filemenu.add_command(label="Exit", command=self.exit_app)
         menubar.add_cascade(label="File", menu=filemenu)
 
@@ -344,6 +346,23 @@ class LoadImageApp:
                 f = open(f_name, 'wb')
                 pickle.dump(self.dots, f)
                 f.close()
+
+    def save_csv(self):
+
+        # Save the dots to a CSV file
+        if self.dots:
+            f_name = (self.imageFile.split(".",1))[0] + ".csv"
+            msg = "Exporting dots data to CSV file " + f_name + "\n WARNING: Existing file will be overwritten!"
+            re = tkMessageBox.askokcancel('Export to CSV', msg)
+            if re:
+                f = open(f_name, 'wt')
+                try:
+                    writer = csv.writer(f)
+                    writer.writerow(('X', 'Y'))
+                    for i in self.dots:
+                        writer.writerow((i[0],i[1]))
+                finally:
+                    f.close()
 
     def exit_app(self):
         sys.exit(0)
