@@ -7,7 +7,7 @@ from PIL import Image, ImageTk
 import sys
 import os
 import math
-import pickle
+#import pickle
 import csv
 import tkFileDialog
 import tkMessageBox
@@ -149,11 +149,19 @@ class LoadImageApp:
                                 ('jpeg files', '.jpeg')]
         options['initialdir'] = '.'
 
+        # The following data structure is for importing csv file (open file dialog)
+        self.csv_opt = csv_options = {}
+        csv_options['defaultextension'] = '.csv'
+        csv_options['filetypes'] = [('all files', '.*'),
+                                ('csv files', '.csv')]
+        csv_options['initialdir'] = '.'
+
         # Menu items
         menubar = Menu(root)
         filemenu = Menu(menubar,tearoff=0)
-        filemenu.add_command(label="Open", command=self.open_file)
-        filemenu.add_command(label="Save", command=self.save_dots)
+        filemenu.add_command(label="Open Image", command=self.open_file)
+        #filemenu.add_command(label="Save", command=self.save_dots)
+        filemenu.add_command(label="Import from CSV", command=self.open_csv)
         filemenu.add_command(label="Export to CSV", command=self.save_csv)
         filemenu.add_command(label="Exit", command=self.exit_app)
         menubar.add_cascade(label="File", menu=filemenu)
@@ -164,7 +172,7 @@ class LoadImageApp:
         drawmenu.add_command(label="Show Dots Info", command=self.show_dots)
         drawmenu.add_command(label="Draw Dot", command=self.dot)
         drawmenu.add_command(label="Draw Line", command=self.line)
-        menubar.add_cascade(label="Tool", menu=drawmenu)
+        menubar.add_cascade(label="Tools", menu=drawmenu)
 
         gridmenu = Menu(menubar, tearoff=0)
         gridmenu.add_command(label="Show Grid", command=self.show_grid)
@@ -225,13 +233,13 @@ class LoadImageApp:
             self.p_img = ImageTk.PhotoImage(self.raw_image)
 
             # If image.olv file exist, load the dots
-            f_name = (image_file.split(".",1))[0] + ".olv"
+            #f_name = (image_file.split(".",1))[0] + ".olv"
 
-            if os.path.isfile(f_name):
-                self.dotsFile = f_name
+            #if os.path.isfile(f_name):
+                #self.dotsFile = f_name
 
-                with open(f_name) as data_file:
-                    self.dots = pickle.load(data_file)
+                #with open(f_name) as data_file:
+                    #self.dots = pickle.load(data_file)
                     #print "DOTS (init) = ", self.dots
 
             # Change the size of the canvas to new width and height based on image size
@@ -246,7 +254,7 @@ class LoadImageApp:
             self.radius = int(math.sqrt(self.center[0] * self.center[0] + self.center[1] * self.center[1]))
 
             # Draw the dots and grids on the canvas as well
-            self.drawDots(canvas)
+            #self.drawDots(canvas)
 
     # To check if a dot coords is in the list, the coords could be off by 1 due to rounding from to_raw()
     def dot_in_list(self,(x,y)):
@@ -255,7 +263,6 @@ class LoadImageApp:
             if math.fabs(x-a) <= 2 and math.fabs(y-b) <= 2:
                 #print "Dots FOund in list: ", (a,b)
                 return (a,b)
-
 
     def to_raw(self,(x,y)):
 
@@ -332,20 +339,54 @@ class LoadImageApp:
         if file:
             # Initialize the canvas with image file
             self.init_canvas(self.canvas,file)
+
         else:
             print "No file selected"
 
+    #def save_dots(self):
 
-    def save_dots(self):
+        #if self.dots:
+            #f_name = (self.imageFile.split(".",1))[0] + ".olv"
+            #msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
+            #re = tkMessageBox.askokcancel('Save File', msg)
+            #if re:
+                #f = open(f_name, 'wb')
+                #pickle.dump(self.dots, f)
+                #f.close()
 
-        if self.dots:
-            f_name = (self.imageFile.split(".",1))[0] + ".olv"
-            msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
-            re = tkMessageBox.askokcancel('Save File', msg)
-            if re:
-                f = open(f_name, 'wb')
-                pickle.dump(self.dots, f)
+    def open_csv(self):
+
+        # Open a CSV file that has dots X,Y coordinates
+        file = tkFileDialog.askopenfilename(**self.csv_opt)
+
+        if file:
+
+            # Delete the existing dots from canvas as well as dots data structure
+            self.canvas.delete("dot")
+            del self.dots[:]
+
+            # Initialize the canvas with image file
+            f = open(file,'rt')
+            try:
+                reader = csv.reader(f)
+                rownum = 0
+
+                for row in reader:
+
+                    # Save the header
+                    if rownum == 0:
+                        header = row
+                    else:
+                        #print "X=", row[0], "Y=", row[1]
+                        #if row[0] is
+                        self.dots.append((int(row[0]),int(row[1])))
+                    rownum += 1
+            finally:
                 f.close()
+
+            self.drawDots(self.canvas)
+        else:
+            print "No file selected"
 
     def save_csv(self):
 
