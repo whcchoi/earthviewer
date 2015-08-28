@@ -392,18 +392,15 @@ class LoadImageApp:
 
         # Save the dots to a CSV file
         if self.dots:
-            f_name = (self.imageFile.split(".",1))[0] + ".csv"
-            msg = "Exporting dots data to CSV file " + f_name + "\n WARNING: Existing file will be overwritten!"
-            re = tkMessageBox.askokcancel('Export to CSV', msg)
-            if re:
-                f = open(f_name, 'wt')
+            f_name = tkFileDialog.asksaveasfile(mode='wt', defaultextension=".csv")
+            if f_name:
                 try:
-                    writer = csv.writer(f)
+                    writer = csv.writer(f_name)
                     writer.writerow(('X', 'Y'))
                     for i in self.dots:
                         writer.writerow((i[0],i[1]))
                 finally:
-                    f.close()
+                    f_name.close()
 
     def exit_app(self):
         sys.exit(0)
