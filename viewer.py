@@ -280,7 +280,8 @@ class LoadImageApp:
 
         for (a,b) in self.dots:
             (x,y) = self.to_window((a,b))
-            my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue", tag="dot")
+            item = my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
+            my_canvas.itemconfig(item, tags=("dot", str(a), str(b)))
 
     def drawGrid(self,my_canvas, center, radius):
 
@@ -495,10 +496,12 @@ class LoadImageApp:
         if self.raw_image:
             if self.tool is "dot":
 
-                event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue", tag="dot")
+                item = event.widget.create_oval(event.x-2,event.y-2,event.x+2,event.y+2,fill="blue")
 
                 # save the dot in the raw_image aspect ratio
-                self.dots.append(self.to_raw((event.x,event.y)))
+                raw = self.to_raw((event.x,event.y))
+                event.widget.itemconfig(item, tags=("dot", str(raw[0]), str(raw[1])))
+                self.dots.append(raw)
             else:
                 # Remember the first mouse down coors (for "select" function)
                 self.select_X, self.select_Y = event.x, event.y
@@ -523,13 +526,19 @@ class LoadImageApp:
             if rect:
                 event.widget.delete(rect)
 
-            found_dots = []
-            # Change the color of the selected dots to "red"
-            for i in items:
-                if "dot" in event.widget.gettags(i):
-                    event.widget.itemconfig(i,fill="red")
-                    found_dots.append(i)
+            found_dots = {}     # A dictionry that stores the item ID as key and dot coords as value
 
+            for i in items:
+
+                # Change the color of the selected dots to "red"
+                event.widget.itemconfig(i,fill="red")
+
+                tags = event.widget.gettags(i)
+                #print "Selected Item (", i , ") with tags: ", tags
+
+                if tags[0] == "dot":
+                    #print "Dot item Found with coords: ", tags[1], tags[2]
+                    found_dots[i] = (int(tags[1]),int(tags[2]))       # save the i->tags as key->value pair in dictionary
 
             # If there's dots found, pop up an dialog to confirm the deletion
             if found_dots:
@@ -538,24 +547,17 @@ class LoadImageApp:
                 # If user confirms deletion
                 if result:
                     # Delete the selected dots on the canvas, and remove it from "dots" list
-                    for i in found_dots:
-                        xy = event.widget.coords(i)
-                        #print xy
-                        x = (xy[0]+xy[2])/2
-                        y = (xy[1]+xy[3])/2
-                        #print "X and Y = ", x, y
-                        raw_xy = self.to_raw((x,y))
-                        #print "Raw X, Y = ", raw_xy
-                        #print "DOTS = ", self.dots
+                    for i,coords in found_dots.items():
+                        #print "Removing item ", i, "with coords: ", coords
+                        self.dots.remove(coords)
+                        event.widget.delete(i)
 
-                        # Since the "to_raw" may make dots value a bit off, therefore, the dot_in_list function will
-                        # accommodate the coords by +1 to -1 pixel value
-                        real_dot = self.dot_in_list(raw_xy)
+                else: # User cancel the deletion
+                    #print "Dot deletion cancelled!"
 
-                        # remove the dots from the list
-                        if real_dot:
-                            self.dots.remove(real_dot)
-                            event.widget.delete(i)
+                    # Change color of dot back to blue if user cancel deletion
+                    for i in found_dots.keys():
+                        event.widget.itemconfig(i,fill="blue")
 
     # Handles mouse movement, depends on what's the current mouse function
     def motion(self,event):
