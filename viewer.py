@@ -7,12 +7,13 @@ from PIL import Image, ImageTk
 import sys
 import os
 import math
-#import pickle
 import csv
 import tkFileDialog
 import tkMessageBox
 
 import tkSimpleDialog
+
+import logging
 
 ####################################################################
 # Class: GridDialog
@@ -87,6 +88,74 @@ class GridDialog(tkSimpleDialog.Dialog):
         self.radius = int(R)
         self.result = True
 
+####################################################################
+# Class: AzimuthDialog
+# Creates the dialog that allows user to define the field azimuth
+####################################################################
+class AzimuthDialog(tkSimpleDialog.Dialog):
+
+    def __init__(self,parent,title=None,center=(0,0),azimuth=-1):
+
+        Toplevel.__init__(self, parent)
+        self.transient(parent)
+
+        if title:
+            self.title(title)
+
+        self.parent = parent
+        self.center = center
+        self.azimuth = azimuth
+
+        self.result = None
+
+        body = Frame(self)
+        self.initial_focus = self.body(body)
+        body.pack(padx=5, pady=5)
+
+        self.buttonbox()
+
+        self.grab_set()
+
+        if not self.initial_focus:
+            self.initial_focus = self
+
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+        self.geometry("+%d+%d" % (parent.winfo_rootx()+50,
+                                  parent.winfo_rooty()+50))
+
+        self.initial_focus.focus_set()
+        self.wait_window(self)
+
+    def body(self, master):
+
+        Label(master, text="Grid Center X:").grid(row=0)
+        Label(master, text="Grid Center Y:").grid(row=1)
+        Label(master, text="Field Azimuth:").grid(row=2)
+
+        c1 = StringVar()
+        self.e1 = Entry(master, textvariable=c1, state=DISABLED)
+        c1.set(str(self.center[0]))
+
+        c2 = StringVar()
+        self.e2 = Entry(master, textvariable=c2, state=DISABLED)
+        c2.set(str(self.center[1]))
+
+        r = StringVar()
+        self.e3 = Entry(master, textvariable=r)
+        r.set(str(self.azimuth))
+
+        self.e1.grid(row=0, column=1)
+        self.e2.grid(row=1, column=1)
+        self.e3.grid(row=2, column=1)
+
+        return self.e1    # initial focus
+
+    def apply(self):
+
+        A = self.e3.get()
+        self.azimuth = int(A)
+
 
 ####################################################################
 # Class: LoadImageApp
@@ -105,7 +174,9 @@ class LoadImageApp:
     zoomed_image = None    # reference to the zoomed image (of class Image)
     showGrid = False
 
-    # A list of saved dots (in tuples)
+
+    # A list of saved dots, dots is a 2D list where each column contains X,Y coordinates of dots
+    # as well as their Horizon Elevation and Azimuth if Field Azimuth is defined
     dots = []
 
     ####################################################################
@@ -119,6 +190,8 @@ class LoadImageApp:
         self.parent = root
         self.frame = Frame(root,bg='white')
         self.imageFile = image_file
+
+        logging.debug('Image File Name: %s', image_file)
 
         # Initialize the scaling/zoom table
         self.mux = {0 : 1.0}
@@ -160,7 +233,6 @@ class LoadImageApp:
         menubar = Menu(root)
         filemenu = Menu(menubar,tearoff=0)
         filemenu.add_command(label="Open Image", command=self.open_file)
-        #filemenu.add_command(label="Save", command=self.save_dots)
         filemenu.add_command(label="Import from CSV", command=self.open_csv)
         filemenu.add_command(label="Export to CSV", command=self.save_csv)
         filemenu.add_command(label="Exit", command=self.exit_app)
@@ -177,6 +249,7 @@ class LoadImageApp:
         gridmenu = Menu(menubar, tearoff=0)
         gridmenu.add_command(label="Show Grid", command=self.show_grid)
         gridmenu.add_command(label="Hide Grid", command=self.hide_grid)
+        gridmenu.add_command(label="Define Field Azimuth", command=self.define_azimuth)
         menubar.add_cascade(label="Grid",menu=gridmenu)
 
         zoommenu = Menu(menubar, tearoff=0)
@@ -206,6 +279,8 @@ class LoadImageApp:
     ####################################################################
     def init_canvas(self, canvas, image_file):
 
+        logging.debug('init_canvas() called')
+
         # Reset these variables when a new image is opened
         self.button_1 = "up"
         self.tool = "move"
@@ -213,6 +288,7 @@ class LoadImageApp:
         self.viewport = (0,0)
         self.zoomcycle = 0
         self.showGrid = False
+
         del self.dots[:]
 
         if image_file:
@@ -232,16 +308,6 @@ class LoadImageApp:
             # need to save a reference to the PhotoImage object, otherwise, image won't be shown
             self.p_img = ImageTk.PhotoImage(self.raw_image)
 
-            # If image.olv file exist, load the dots
-            #f_name = (image_file.split(".",1))[0] + ".olv"
-
-            #if os.path.isfile(f_name):
-                #self.dotsFile = f_name
-
-                #with open(f_name) as data_file:
-                    #self.dots = pickle.load(data_file)
-                    #print "DOTS (init) = ", self.dots
-
             # Change the size of the canvas to new width and height based on image size
             canvas.config(width=width, height=height)
 
@@ -252,17 +318,7 @@ class LoadImageApp:
             # Find the default center of image and radius
             self.center = (int(width/2), int(height/2))
             self.radius = int(math.sqrt(self.center[0] * self.center[0] + self.center[1] * self.center[1]))
-
-            # Draw the dots and grids on the canvas as well
-            #self.drawDots(canvas)
-
-    # To check if a dot coords is in the list, the coords could be off by 1 due to rounding from to_raw()
-    def dot_in_list(self,(x,y)):
-
-        for a,b in self.dots:
-            if math.fabs(x-a) <= 2 and math.fabs(y-b) <= 2:
-                #print "Dots FOund in list: ", (a,b)
-                return (a,b)
+            self.field_azimuth = -1
 
     def to_raw(self,(x,y)):
 
@@ -276,14 +332,21 @@ class LoadImageApp:
         return (int(x * self.mux[self.zoomcycle]) - vx,int(y * self.mux[self.zoomcycle]) - vy)
 
     def drawDots(self, my_canvas):
-        #print "DOTS (drawDots) = ", self.dots
 
-        for (a,b) in self.dots:
-            (x,y) = self.to_window((a,b))
+        logging.debug('drawDots() -> %s', self.print_dots())
+
+        rows = len(self.dots)
+        for row in xrange(rows):
+
+            dot = self.dots[row]
+
+            (x,y) = self.to_window((dot[0],dot[1]))
             item = my_canvas.create_oval(x-2,y-2,x+2,y+2,fill="blue")
-            my_canvas.itemconfig(item, tags=("dot", str(a), str(b)))
+            my_canvas.itemconfig(item, tags=("dot", str(dot[0]), str(dot[1])))
 
-    def drawGrid(self,my_canvas, center, radius):
+    def drawGrid(self, my_canvas, center, radius):
+
+        logging.debug('drawGrid() -> center = %d, %d, radius = %d', center[0], center[1], radius)
 
         # remove old grid before drawing new ones
         my_canvas.delete("grid")
@@ -302,6 +365,22 @@ class LoadImageApp:
             rY = center[1] + int(radius * math.sin(math.radians(n)))
             pX,pY = self.to_window((rX,rY))
             my_canvas.create_line(wX,wY,pX,pY,tag="grid")
+
+    def drawAzimuth(self, my_canvas, center, radius, azimuth):
+
+        logging.debug('drawAzimuth() -> center = %d, %d, radius = %d, azimuth = %d', center[0], center[1], radius, azimuth)
+
+        if azimuth >= 0 and azimuth <= 360:
+            my_canvas.delete("azimuth")
+
+            (wX,wY) = self.to_window(center)
+
+            # Draw the field azimuth
+            rX = center[0] + int(radius * math.cos(math.radians(azimuth)))
+            rY = center[1] + int(radius * math.sin(math.radians(azimuth)))
+            pX,pY = self.to_window((rX,rY))
+            my_canvas.create_line(wX,wY,pX,pY, tag="azimuth", fill="green", width=3)
+
 
     def scale_image(self):
 
@@ -325,10 +404,12 @@ class LoadImageApp:
         my_canvas.create_image(0,0,image=self.p_img, anchor="nw")
 
         # draw the saved dots
-        self.drawDots(my_canvas)
+        if self.dots:
+            self.drawDots(my_canvas)
 
         if self.showGrid:
             self.drawGrid(my_canvas, self.center, self.radius)
+            self.drawAzimuth(my_canvas, self.center, self.radius, self.field_azimuth)
 
     ########################################################
     # The following are menu handlers
@@ -342,18 +423,7 @@ class LoadImageApp:
             self.init_canvas(self.canvas,file)
 
         else:
-            print "No file selected"
-
-    #def save_dots(self):
-
-        #if self.dots:
-            #f_name = (self.imageFile.split(".",1))[0] + ".olv"
-            #msg = "Saving dots as file " + f_name + "\n WARNING: Existing file will be overwritten!"
-            #re = tkMessageBox.askokcancel('Save File', msg)
-            #if re:
-                #f = open(f_name, 'wb')
-                #pickle.dump(self.dots, f)
-                #f.close()
+            logging.info('No file selected')
 
     def open_csv(self):
 
@@ -377,9 +447,8 @@ class LoadImageApp:
                     # Save the header
                     if rownum == 0:
                         header = row
+                        logging.debug('Header Info: %s', header)
                     else:
-                        #print "X=", row[0], "Y=", row[1]
-                        #if row[0] is
                         self.dots.append((int(row[0]),int(row[1])))
                     rownum += 1
             finally:
@@ -387,7 +456,7 @@ class LoadImageApp:
 
             self.drawDots(self.canvas)
         else:
-            print "No file selected"
+            logging.info('No file selected')
 
     def save_csv(self):
 
@@ -397,9 +466,13 @@ class LoadImageApp:
             if f_name:
                 try:
                     writer = csv.writer(f_name)
-                    writer.writerow(('X', 'Y'))
-                    for i in self.dots:
-                        writer.writerow((i[0],i[1]))
+
+                    writer.writerow(('X', 'Y', 'Horizon', 'Azimuth'))
+
+                    rows = len(self.dots)
+                    for row in xrange(rows):
+                        writer.writerow(self.dots[row])
+
                 finally:
                     f_name.close()
 
@@ -413,24 +486,34 @@ class LoadImageApp:
         self.tool = "select"
 
     def show_dots(self):
+       tkMessageBox.showinfo("Dots Information", self.print_dots())
 
-        #str = 'X, Y', self.dots
+    def print_dots(self):
+
         text = "X , Y = "
-        for i in self.dots:
+
+        rows = len(self.dots)
+        for row in xrange(rows):
+            i = self.dots[row]
+
             text = text + "(" + str(i[0]) + " , " + str(i[1]) + "), "
 
-        tkMessageBox.showinfo("Dots Information", text)
+        return text
 
     def show_grid(self):
 
         # Get the user x,y coords and radius for the grid
         if self.raw_image:
 
-            d = GridDialog(self.parent, title="Grid Preferences", center=self.center, radius =self.radius)
+            d = GridDialog(self.parent, title="Grid Preferences", center=self.center, radius=self.radius)
+
+            print "D = ", d, self.showGrid, d.result
+
             if d:
                 self.center = d.center
                 self.radius = d.radius
-                self.showGrid = d.result
+                if not self.showGrid:
+                    self.showGrid = d.result
 
                 if self.showGrid:
                     self.drawGrid(self.canvas, d.center, d.radius)
@@ -439,6 +522,16 @@ class LoadImageApp:
         if self.raw_image:
             self.showGrid = False
             self.canvas.delete("grid")
+
+    def define_azimuth(self):
+
+        if self.raw_image and self.showGrid:
+
+            d = AzimuthDialog(self.parent, title="Define Azimuth", center=self.center, azimuth=self.field_azimuth)
+            if d:
+                self.field_azimuth = d.azimuth
+                self.drawAzimuth(self.canvas, self.center, self.radius, self.field_azimuth)
+                self.azimuth_calculation(self.center, self.radius, self.field_azimuth)
 
     def dot(self):
         if self.raw_image:
@@ -472,7 +565,7 @@ class LoadImageApp:
 
     def zoomer(self,event):
 
-        #print "---------------- zoomer --------------------"
+        logging.debug('zoomer()')
 
         # Zoom image and update viewport based on mouse position
         if self.raw_image:
@@ -483,7 +576,7 @@ class LoadImageApp:
             elif (event.delta < 0 and self.zoomcycle > self.MIN_ZOOM):
                 self.zoomcycle -= 1
             else:
-                print "Max/Min zoom reached!"
+                logging.info('Max/Min zoom reached!')
                 return
 
             self.scale_image()
@@ -493,6 +586,7 @@ class LoadImageApp:
 
     def b1down(self,event):
 
+        logging.debug('b1down() at (%d,%d)', event.x, event.y)
         if self.raw_image:
             if self.tool is "dot":
 
@@ -501,7 +595,26 @@ class LoadImageApp:
                 # save the dot in the raw_image aspect ratio
                 raw = self.to_raw((event.x,event.y))
                 event.widget.itemconfig(item, tags=("dot", str(raw[0]), str(raw[1])))
-                self.dots.append(raw)
+
+                # Calcualte the horizon elevation and azimuth if field azimuth is defined and grid is visable
+                if self.showGrid and self.field_azimuth >= 0 and self.field_azimuth <= 360:
+
+                    rX = self.center[0] + int(self.radius * math.cos(math.radians(self.field_azimuth)))
+                    rY = self.center[1] + int(self.radius * math.sin(math.radians(self.field_azimuth)))
+
+                    azimuth = self.find_angle(self.center, (rX,rY), (raw[0], raw[1]))
+
+                    # (x-center.x)2 + (y-center.y)2 = r2
+                    dot_radius = math.sqrt(math.pow(raw[0]-self.center[0],2)+math.pow(raw[1]-self.center[1],2))
+                    logging.debug('Dot (%d,%d) has radius %f', raw[0], raw[1], dot_radius)
+                    horizon = self.find_horizon(dot_radius, self.radius)
+                    logging.debug('Dot (%d,%d) has Horizon Elevation = %f, Azimuth = %f', raw[0], raw[1], horizon, azimuth)
+
+                    new_dot = [raw[0], raw[1], round(horizon,5), round(azimuth,5)]
+                    self.dots.append(new_dot)
+
+                else:
+                    self.dots.append(raw)
             else:
                 # Remember the first mouse down coors (for "select" function)
                 self.select_X, self.select_Y = event.x, event.y
@@ -510,6 +623,7 @@ class LoadImageApp:
 
     def b1up(self,event):
 
+        logging.debug('b1up()-> tool = %s at (%d, %d)', self.tool, event.x, event.y)
         if not self.raw_image:
             return
 
@@ -534,10 +648,9 @@ class LoadImageApp:
                 event.widget.itemconfig(i,fill="red")
 
                 tags = event.widget.gettags(i)
-                #print "Selected Item (", i , ") with tags: ", tags
+                logging.debug('Selected Item-> %d with tags %s, %s, %s', i, tags[0], tags[1], tags[2])
 
                 if tags[0] == "dot":
-                    #print "Dot item Found with coords: ", tags[1], tags[2]
                     found_dots[i] = (int(tags[1]),int(tags[2]))       # save the i->tags as key->value pair in dictionary
 
             # If there's dots found, pop up an dialog to confirm the deletion
@@ -548,12 +661,20 @@ class LoadImageApp:
                 if result:
                     # Delete the selected dots on the canvas, and remove it from "dots" list
                     for i,coords in found_dots.items():
-                        #print "Removing item ", i, "with coords: ", coords
-                        self.dots.remove(coords)
+                        logging.debug('Removing dot %d with coords: %d, %d', i, coords[0], coords[1])
+
+                        rows = len(self.dots)
+                        for row in xrange(rows):
+                            dot = self.dots[row]
+
+                            if coords[0] == dot[0] and coords[1] == dot[1]:
+                                self.dots.remove(dot)
+                                break
+
                         event.widget.delete(i)
 
                 else: # User cancel the deletion
-                    #print "Dot deletion cancelled!"
+                    logging.info('Dot deletion cancelled!')
 
                     # Change color of dot back to blue if user cancel deletion
                     for i in found_dots.keys():
@@ -595,6 +716,52 @@ class LoadImageApp:
         if self.zoomed_image:
             self.display_region(self.canvas)
 
+    def azimuth_calculation(self, center, radius, azimuth):
+
+        logging.debug('Calculating Horizon Elevation and Azimuth based on:')
+        logging.debug('Grid Center = (%d,%d), Radius = %d, Field Azimuth = %d', center[0], center[1], radius, azimuth)
+
+        if azimuth >= 0 and azimuth <= 360:
+
+            rX = center[0] + int(radius * math.cos(math.radians(azimuth)))
+            rY = center[1] + int(radius * math.sin(math.radians(azimuth)))
+
+            # calculate horizon elevation and azimuth for each points
+            # and update dots list with horizon elevation and azimuth
+            new_dots = []
+
+            rows = len(self.dots)
+            for row in xrange(rows):
+                dot = self.dots.pop()
+
+                azimuth = self.find_angle(center, (rX,rY), (dot[0], dot[1]))
+
+                # (x-center.x)2 + (y-center.y)2 = r2
+                dot_radius = math.sqrt(math.pow(dot[0]-center[0],2)+math.pow(dot[1]-center[1],2))
+                logging.debug('Dot (%d,%d) has radius %f', dot[0], dot[1], dot_radius)
+                horizon = self.find_horizon(dot_radius, radius)
+                logging.debug('Dot (%d,%d) has Horizon Elevation = %f, Azimuth = %f', dot[0], dot[1], horizon, azimuth)
+
+                new_dot = [dot[0], dot[1], round(horizon,5), round(azimuth,5)]
+                new_dots.append(new_dot)
+
+            self.dots = new_dots
+
+    def find_angle(self, C, P2, P3):
+
+        angle = math.atan2(P2[1]-C[1], P2[0]-C[0]) - math.atan2(P3[1]-C[1], P3[0]-C[0])
+        angle_in_degree = math.degrees(angle)
+
+        if angle_in_degree < 0:
+            angle_in_degree += 360
+
+        return angle_in_degree
+
+    def find_horizon(self, dot_radius, grid_radius):
+
+        camera = 185
+        return (camera/2) - ((dot_radius/grid_radius) * (camera/2))
+
 # Main Program, checks to see if image file is provided in command line, if not, it will be opened via menu File->Open File
 
 if __name__ == '__main__':
@@ -602,9 +769,15 @@ if __name__ == '__main__':
     root.title("Image Viewer")
     image_file = None
 
+
+    logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(levelname)-8s %(message)s',
+                    datefmt='%a, %d %b %Y %H:%M:%S')
+
     if len(sys.argv) > 1:
         if os.path.isfile(sys.argv[1]):
             image_file = sys.argv[1]
+            logging.debug('Image File Name: %s', image_file)
         else:
             exit_string = "Image File " + sys.argv[1] + " doesn't exist!"
             sys.exit(exit_string)
